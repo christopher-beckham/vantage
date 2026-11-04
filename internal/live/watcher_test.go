@@ -99,6 +99,8 @@ func TestShouldPruneDir(t *testing.T) {
 		{"vantage inbox kept", ".vantage/inbox", false},
 		{"vantage other pruned", ".vantage/reviews", true},
 		{"vantage inbox subdir pruned", ".vantage/inbox/sub", true},
+		{"vantage outbox kept", ".vantage/outbox", false},
+		{"vantage outbox subdir pruned", ".vantage/outbox/sub", true},
 		// A repository below the root owns its .git: its state files are not
 		// the served repository's, and its objects are hundreds of directories.
 		{"nested repo git dir pruned", "alpha/.git", true},
@@ -182,6 +184,46 @@ func TestIsInboxPath(t *testing.T) {
 	for _, tc := range tests {
 		require.Equal(t, tc.want, isInboxPath(tc.rel), "rel=%q", tc.rel)
 	}
+}
+
+func TestIsOutboxPath(t *testing.T) {
+	tests := []struct {
+		rel  string
+		want bool
+	}{
+		{".vantage/outbox", true},
+		{".vantage/outbox/1-docs__a.md", true},
+		{".vantage/outbox/1-docs__a.md.claimed", true},
+		{".vantage", false},
+		{".vantage/inbox/a.jsonl", false},
+		{".vantage/outboxes", false},
+		{"docs/a.md", false},
+	}
+	for _, tc := range tests {
+		require.Equal(t, tc.want, isOutboxPath(tc.rel), "rel=%q", tc.rel)
+	}
+}
+
+// A batch is a Markdown file, so classify alone would push it as a changed
+// document. It is Vantage's own state and must never reach files_changed.
+func TestHandleEventKeepsOutboxBatchOutOfFilesChanged(t *testing.T) {
+	root := t.TempDir()
+	outbox := filepath.Join(root, ".vantage", "outbox")
+	require.NoError(t, os.MkdirAll(outbox, 0o755))
+	batch := filepath.Join(outbox, "1-docs__a.md")
+	require.NoError(t, os.WriteFile(batch, []byte("comments"), 0o644))
+	w, err := NewWatcher(root, "", nil, nil, false, quietLogger())
+	require.NoError(t, err)
+	co := newCoalescer(time.Hour, time.Hour, func([]string) {})
+	defer co.stop()
+
+	w.handleEvent(fsnotify.Event{Name: batch, Op: fsnotify.Create}, co)
+	w.handleEvent(fsnotify.Event{Name: batch + ".claimed", Op: fsnotify.Rename}, co)
+
+	co.mu.Lock()
+	defer co.mu.Unlock()
+	require.Empty(t, co.pending, "outbox traffic must not enter the files_changed flow")
+	require.False(t, w.isContent(".vantage/outbox/1-docs__a.md"))
 }
 
 func TestShouldPruneDirHonorsIgnore(t *testing.T) {

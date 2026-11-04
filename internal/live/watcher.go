@@ -87,8 +87,9 @@ func classify(rel string) (keep bool, isGitState bool) {
 // should be excluded from the recursive watch set. The .git subtree is pruned
 // except for its immediate top level (so one-level state files remain watched);
 // a nested repository's .git is pruned whole;
-// .vantage is pruned except for its inbox (so review deliveries generate
-// events even though the dir is always-ignored elsewhere); ignored/excluded
+// .vantage is pruned except for its inbox and outbox (so review deliveries
+// and batch claims generate events even though the dir is always-ignored
+// elsewhere); ignored/excluded
 // directories are pruned via the ignore matcher.
 func shouldPruneDir(rel string, matcher *ignore.Matcher) bool {
 	norm := filepath.ToSlash(rel)
@@ -109,11 +110,11 @@ func shouldPruneDir(rel string, matcher *ignore.Matcher) bool {
 	if slices.Contains(parts[1:], ".git") {
 		return true
 	}
-	// Keep ".vantage" and its inbox — checked before the matcher, which
-	// always-ignores the dir. Anything deeper is vantage-owned state the
-	// watcher has no business in.
+	// Keep ".vantage", its inbox and its outbox — checked before the
+	// matcher, which always-ignores the dir. Anything deeper is vantage-owned
+	// state the watcher has no business in.
 	if parts[0] == ".vantage" {
-		return len(parts) > 1 && norm != review.InboxRel
+		return len(parts) > 1 && norm != review.InboxRel && norm != review.OutboxRel
 	}
 	if matcher != nil && matcher.IsIgnored(norm, true) {
 		return true
@@ -126,6 +127,13 @@ func shouldPruneDir(rel string, matcher *ignore.Matcher) bool {
 // the files_changed pipeline (classify would drop them: they are not Markdown).
 func isInboxPath(rel string) bool {
 	return rel == review.InboxRel || strings.HasPrefix(rel, review.InboxRel+"/")
+}
+
+// isOutboxPath reports whether a repo-relative slash path is the review outbox
+// directory or anything inside it. A batch is a Markdown file, so classify
+// would keep it as a document; it is Vantage's own state and never one.
+func isOutboxPath(rel string) bool {
+	return rel == review.OutboxRel || strings.HasPrefix(rel, review.OutboxRel+"/")
 }
 
 // Watcher recursively watches a repository for Markdown and git-state changes,
@@ -388,6 +396,15 @@ func (w *Watcher) Start(ctx context.Context) error {
 	w.seedGitStateFingerprints()
 	w.logStartup(added)
 
+	// Rewrite the watching guide wherever Vantage state already exists, so an
+	// upgraded server never leaves an older version's instructions in front of
+	// an agent. A repository with no .vantage directory gets nothing.
+	if w.store != nil {
+		if err := review.RefreshWatchingGuide(w.root); err != nil {
+			w.logger.Warn("review: failed to refresh the watching guide", "error", err)
+		}
+	}
+
 	// Deliveries that landed while the server was down are consumed before the
 	// first event can arrive.
 	w.consumeInbox()
@@ -646,6 +663,16 @@ func (w *Watcher) handleEvent(ev fsnotify.Event, co *coalescer) {
 		w.mu.Unlock()
 		w.logger.Debug("watcher inbox event", "op", ev.Op.String(), "path", rel)
 		w.consumeInbox()
+		return
+	}
+
+	// Outbox traffic is a batch being written, claimed, answered or failed. It
+	// never enters the files_changed flow: no consumer holds a path there.
+	if isOutboxPath(rel) {
+		w.mu.Lock()
+		w.stats.kept++
+		w.mu.Unlock()
+		w.logger.Debug("watcher outbox event", "op", ev.Op.String(), "path", rel)
 		return
 	}
 
@@ -1298,10 +1325,10 @@ func (w *Watcher) forgetDir(rel string) []string {
 
 // isContent reports whether a repo-relative slash path is one the watcher
 // pushes as changed content: kept by classify, not a .git state file, not
-// inbox traffic, and not ignored.
+// inbox or outbox traffic, and not ignored.
 func (w *Watcher) isContent(rel string) bool {
 	keep, isGitState := classify(rel)
-	if !keep || isGitState || isInboxPath(rel) {
+	if !keep || isGitState || isInboxPath(rel) || isOutboxPath(rel) {
 		return false
 	}
 	return rel == repoconfig.FileName || w.matcher == nil || !w.matcher.IsIgnored(rel, false)
