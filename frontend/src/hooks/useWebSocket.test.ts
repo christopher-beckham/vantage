@@ -4,6 +4,7 @@ import { useWebSocket } from "./useWebSocket";
 import { useRepoStore } from "../stores/useRepoStore";
 import { useGitStore } from "../stores/useGitStore";
 import { useReviewStore } from "../stores/useReviewStore";
+import { useOutboxStore } from "../stores/useOutboxStore";
 import { CommentBox } from "../lib/commentAutosave";
 import { useStarredStore } from "../stores/useStarredStore";
 import { useFilePickerStore } from "../stores/useFilePickerStore";
@@ -36,6 +37,8 @@ describe("useWebSocket", () => {
   // loadReview action so we observe the real call the hook makes.
   const mockLoadReview = vi.fn();
   let realLoadReview: ReturnType<typeof useReviewStore.getState>["loadReview"];
+  const mockOutboxReload = vi.fn(() => Promise.resolve());
+  let realOutboxReload: ReturnType<typeof useOutboxStore.getState>["reload"];
   // Same treatment for the starred store: swap the real action rather than
   // module-mocking, so this observes the call the hook actually makes.
   const mockLoadStarred = vi.fn();
@@ -96,6 +99,9 @@ describe("useWebSocket", () => {
 
     realLoadReview = useReviewStore.getState().loadReview;
     useReviewStore.setState({ loadReview: mockLoadReview });
+
+    realOutboxReload = useOutboxStore.getState().reload;
+    useOutboxStore.setState({ reload: mockOutboxReload });
 
     realLoadStarred = useStarredStore.getState().loadStarred;
     useStarredStore.setState({ loadStarred: mockLoadStarred });
@@ -162,6 +168,7 @@ describe("useWebSocket", () => {
 
   afterEach(() => {
     useReviewStore.setState({ loadReview: realLoadReview });
+    useOutboxStore.setState({ reload: realOutboxReload });
     useStarredStore.setState({ loadStarred: realLoadStarred });
     useFilePickerStore.setState({ refresh: realPickerRefresh });
     useAllRecentsStore.setState({ refresh: realAllRecentsRefresh });
@@ -427,6 +434,16 @@ describe("useWebSocket", () => {
     // we never received. Re-fetching the review keeps the client from PUTting
     // a stale comments array back and erasing them.
     expect(mockLoadReview).toHaveBeenCalledWith("test.md");
+  });
+
+  it("reloads the outbox state on reconnect for a markdown file", () => {
+    renderHook(() => useWebSocket());
+
+    reconnect();
+
+    // A claim, an answer or a failure during the outage was an outbox_changed
+    // push nobody heard, so without this the bar keeps showing the old state.
+    expect(mockOutboxReload).toHaveBeenCalled();
   });
 
   it("does not reload review data on reconnect for a non-markdown path", () => {

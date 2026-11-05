@@ -400,6 +400,10 @@ export const useWebSocket = (options: UseWebSocketOptions = {}) => {
           // events we never received. Without this reload the client keeps a
           // stale comments array until the next server push or manual refresh.
           if (path === reviewPath()) useReviewStore.getState().loadReview(path);
+          // So did any outbox_changed: an agent may have claimed, answered or
+          // given up on a batch meanwhile, and the panel would go on showing
+          // the old state until the next one.
+          void useOutboxStore.getState().reload();
         } else {
           viewDirectory(path);
         }
