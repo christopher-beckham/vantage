@@ -98,17 +98,28 @@ the moment a file appears.
 
 ```mermaid
 stateDiagram-v2
+    direction LR
+    state "x.md.writing" as writing
+    state "x.md" as ready
+    state "x.md.updating" as updating
+    state "x.md.claimed" as claimed
+    state "x.md.failed" as failed
     [*] --> writing: "Vantage writes"
-    writing --> ready: "rename to x.md"
-    ready --> updating: "Vantage claims it to rewrite"
-    updating --> ready: "rewritten"
-    updating --> [*]: "no comments left"
-    ready --> claimed: "agent renames to x.md.claimed"
-    claimed --> [*]: "answered, agent deletes it"
-    claimed --> failed: "agent writes the reason, renames to x.md.failed"
-    failed --> ready: "Re-send"
-    failed --> [*]: "Dismiss"
+    writing --> ready: "drop .writing"
+    ready --> updating: "Vantage adds .updating"
+    updating --> ready: "drop .updating"
+    updating --> [*]: "deleted"
+    ready --> claimed: "agent adds .claimed"
+    claimed --> [*]: "agent deletes"
+    claimed --> failed: ".claimed becomes .failed"
+    failed --> ready: "Re-send drops .failed"
+    failed --> [*]: "Dismiss deletes"
 ```
+
+A batch keeps one base name, `x.md`, for its whole life. Every other state is
+that name with a suffix added, and every arrow except a delete is a rename that
+adds, removes or swaps one suffix. Only the bare `x.md` matches the agent's
+`*.md` wait, so a batch with any suffix never wakes an agent.
 
 Vantage reads the state from the file name alone:
 
