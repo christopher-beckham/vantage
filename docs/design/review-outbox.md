@@ -251,6 +251,15 @@ does not stop at a prompt while the user is away ([§7](#7-edge-cases-and-how-ea
    says to run one watching session per repository.
 7. **A follow-up while the agent works.** It becomes a new batch. Round numbers
    already keep a follow-up apart from what the first reply answered.
+8. **Send while a batch is claimed repeats its comments.** Found in the first
+   live trial, 2026-11-04. Send includes every comment still waiting on the
+   agent, and the comments in a claimed batch are still waiting until the
+   replies land. A reviewer who clicked Send while the bar said Working queued
+   the same comment again, and only the agent noticing kept it from being
+   answered twice. Send must leave out the comments a claimed batch already
+   holds, at the round it holds them, so a new batch carries only new comments
+   and new follow-ups. Until then, `watching.md` tells the agent to skip a
+   comment it has already answered at that round.
 
 ## 8. Known gaps
 
@@ -273,7 +282,9 @@ does not stop at a prompt while the user is away ([§7](#7-edge-cases-and-how-ea
 2. Send posts the browser's text and Vantage writes a batch; the outbox states
    show in the review panel.
 3. The `vantage-watch` skill in `userguide/`, with its permission list.
-4. Rewrite-by-claim for edited and deleted comments.
+4. Rewrite-by-claim for edited and deleted comments, and Send leaving out
+   what a claimed batch holds ([§7](#7-edge-cases-and-how-each-is-handled),
+   case 8).
 5. Failure reports, Re-send and Dismiss.
 6. The stalled-claim timeout ([§6](#6-vantages-side)).
 

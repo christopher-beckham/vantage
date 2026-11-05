@@ -44,7 +44,9 @@ batch, including one that has never seen the document.
 5. **Answer it.** Read `NAME.md.claimed` and do what it says. Change only the
    reviewed document, with targeted edits, never by rewriting the whole file. If
    an edit is refused because the file changed on disk, read it again and redo
-   the edit. Check the document and deliver your replies as the batch
+   the edit. If a comment's heading shows the same `[id]` and
+   `round:N` as one you have already answered, skip it: a second reply reads
+   as a second answer. Check the document and deliver your replies as the batch
    describes.
 6. **Clean up.** Delete `NAME.md.claimed`. Keep the review's edits out of any
    commit you make for other work.
