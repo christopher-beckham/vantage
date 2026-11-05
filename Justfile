@@ -112,6 +112,18 @@ e2e:
     sh scripts/e2e-fixture.sh
     cd frontend && npx playwright test
 
+# Does a real agent follow .vantage/watching.md? Runs headless Claude Code
+# sessions against a real server, one per scenario, and grades what each did
+# (frontend/evals/watching.eval.ts). It spends money, needs the network and a
+# signed-in `claude`, and its results vary, so it is not part of the gate or CI.
+# VANTAGE_EVAL_MODEL picks the model, VANTAGE_EVAL_BUDGET_USD caps each session
+# (default 2), VANTAGE_EVAL_KEEP=1 keeps the repositories and transcripts.
+
+# Grade a real headless agent on following watching.md; costs money, not in the gate.
+[positional-arguments]
+agent-eval *args:
+    cd frontend && npx vitest run --config vitest.eval.config.ts "$@"
+
 # The planning index's scale targets (docs/reference/planning-index.md §18), on
 # the production bundle in headless Chromium: the scale fixture at 15, 30, 45 and
 # 60 documents, written to a temporary directory and never committed, or a
