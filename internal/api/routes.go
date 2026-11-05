@@ -101,5 +101,7 @@ func (h *Handlers) Routes() []Route {
 		{http.MethodPost, "/review/comments/{id}/reopen-reply", h.ReviewCommentReopenReply, ScopeRepo},
 		{http.MethodPost, "/review/dismissals", h.ReviewDismissals, ScopeRepo},
 		{http.MethodPost, "/review/move", h.ReviewMove, ScopeRepo},
+		{http.MethodGet, "/review/outbox", h.ReviewOutboxGet, ScopeRepo},
+		{http.MethodPost, "/review/outbox", h.ReviewOutboxSend, ScopeRepo},
 	}
 }

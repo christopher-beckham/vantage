@@ -673,6 +673,9 @@ func (w *Watcher) handleEvent(ev fsnotify.Event, co *coalescer) {
 		w.stats.kept++
 		w.mu.Unlock()
 		w.logger.Debug("watcher outbox event", "op", ev.Op.String(), "path", rel)
+		if w.manager != nil {
+			w.manager.Broadcast(outboxChangedMessage{Type: "outbox_changed", Repo: w.repoName})
+		}
 		return
 	}
 
@@ -916,6 +919,15 @@ type filesChangedMessage struct {
 // deliveries and API commands look identical to the browser. Repo is
 // intentionally not omitempty: the frontend matches it against its current
 // repo, and the single-repo sentinel is the empty string, not an absent key.
+// outboxChangedMessage tells browsers to fetch the outbox state again. It names
+// no document: a batch's file name holds a hash of the path rather than the
+// path, and a browser only ever shows one document's batches anyway. Repo is not
+// omitempty for the same reason as in reviewChangedMessage.
+type outboxChangedMessage struct {
+	Type string `json:"type"`
+	Repo string `json:"repo"`
+}
+
 type reviewChangedMessage struct {
 	Type string `json:"type"`
 	Repo string `json:"repo"`

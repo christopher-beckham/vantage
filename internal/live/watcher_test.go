@@ -214,6 +214,9 @@ func TestHandleEventKeepsOutboxBatchOutOfFilesChanged(t *testing.T) {
 	require.NoError(t, os.WriteFile(batch, []byte("comments"), 0o644))
 	w, err := NewWatcher(root, "", nil, nil, false, quietLogger())
 	require.NoError(t, err)
+	w.addWatch = func(string) error { return nil }
+	w.addRecursive(root)
+	require.Contains(t, w.dirs, ".vantage/outbox", "the outbox is watched, so its events are not dropped as stale")
 	co := newCoalescer(time.Hour, time.Hour, func([]string) {})
 	defer co.stop()
 
@@ -224,6 +227,31 @@ func TestHandleEventKeepsOutboxBatchOutOfFilesChanged(t *testing.T) {
 	defer co.mu.Unlock()
 	require.Empty(t, co.pending, "outbox traffic must not enter the files_changed flow")
 	require.False(t, w.isContent(".vantage/outbox/1-docs__a.md"))
+}
+
+// An agent claiming, answering or failing a batch is a rename the browser
+// cannot see, so the watcher pushes outbox_changed for it to fetch the state.
+func TestHandleEventPushesOutboxChanged(t *testing.T) {
+	root := t.TempDir()
+	outbox := filepath.Join(root, ".vantage", "outbox")
+	require.NoError(t, os.MkdirAll(outbox, 0o755))
+	m := NewManager(quietLogger(), nil)
+	c := m.newTestConn(4)
+	w, err := NewWatcher(root, "repo-a", m, nil, false, quietLogger())
+	require.NoError(t, err)
+	w.addWatch = func(string) error { return nil }
+	w.addRecursive(root)
+	co := newCoalescer(time.Hour, time.Hour, func([]string) {})
+	defer co.stop()
+
+	w.handleEvent(fsnotify.Event{Name: filepath.Join(outbox, "1-a.md-0000.md.claimed"), Op: fsnotify.Create}, co)
+
+	select {
+	case got := <-c.send:
+		require.JSONEq(t, `{"type":"outbox_changed","repo":"repo-a"}`, string(got))
+	default:
+		t.Fatal("no outbox_changed push")
+	}
 }
 
 func TestShouldPruneDirHonorsIgnore(t *testing.T) {
