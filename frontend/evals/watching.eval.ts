@@ -630,7 +630,7 @@ describe("an agent watching for Vantage reviews", () => {
 class Terminal {
   readonly name = `vantage-eval-${process.pid}-${Date.now()}`;
   readonly prompts: string[] = [];
-  private trusted = false;
+  private lastKey = 0;
 
   constructor(private readonly repo: string) {
     const quoted = allowedTools.map((t) => `'${t}'`).join(" ");
@@ -653,11 +653,14 @@ class Terminal {
   /** Answers whatever the session is asking, so a test can keep going. */
   tend() {
     const p = this.pane();
-    if (!this.trusted && /Yes, I trust this folder/.test(p)) {
-      // The default is "No, exit", so the answer is chosen, not defaulted.
-      tmux("send-keys", "-t", this.name, "Down");
-      tmux("send-keys", "-t", this.name, "Enter");
-      this.trusted = true;
+    if (/Yes, I trust this folder/.test(p)) {
+      // The default is "No, exit", so the answer is chosen, not defaulted, one
+      // key at a time from what the screen shows: keys sent before the dialog
+      // takes input are lost, and a second Down would wrap back to "No".
+      if (Date.now() - this.lastKey < 1000) return;
+      this.lastKey = Date.now();
+      const onYes = /❯\s*Yes, I trust this folder/.test(p);
+      tmux("send-keys", "-t", this.name, onYes ? "Enter" : "Down");
       return;
     }
     if (/Do you want to (proceed|make this edit|create)/i.test(p)) {
@@ -729,10 +732,8 @@ describe("an interactive session watching for Vantage reviews", () => {
   test("keeps watching across rounds: wakes from idle, takes a follow-up, and a Send while it works", async () => {
     const sc = new Scenario("interactive");
     sc.commit([releaseDoc]);
-    // A repository reviewed before, so Vantage writes the guide at startup. In
-    // one nobody has reviewed, the guide only appears with the first Send, and
-    // a session asked to watch before that finds nothing to follow.
-    mkdirSync(join(sc.repo, ".vantage"));
+    // A repository nobody has reviewed: the agent is asked to watch before
+    // the first Send, so the guide must already be there (§7 case 10).
     await sc.serve();
     const term = new Terminal(sc.repo);
     const timings: string[] = [];

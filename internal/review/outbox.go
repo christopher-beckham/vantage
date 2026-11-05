@@ -61,19 +61,6 @@ func EnsureOutbox(root string) error {
 	return os.MkdirAll(OutboxDir(root), 0o755)
 }
 
-// RefreshWatchingGuide rewrites the guide where Vantage state already exists
-// and creates nothing anywhere else, so a repository nobody has reviewed gets
-// no .vantage directory just because Vantage served it.
-func RefreshWatchingGuide(root string) error {
-	if _, err := os.Stat(filepath.Join(root, ".vantage")); err != nil {
-		if errors.Is(err, fs.ErrNotExist) {
-			return nil
-		}
-		return err
-	}
-	return WriteWatchingGuide(root)
-}
-
 // WriteWatchingGuide writes the guide and the wait script for root, and the
 // .gitignore if there is none. An existing .gitignore is someone's choice and
 // is left alone.

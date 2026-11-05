@@ -1662,7 +1662,9 @@ func TestWatchLimitReachesTheBrowser(t *testing.T) {
 	require.NoError(t, cfg.Resolve())
 	srv, err := NewServer(cfg)
 	require.NoError(t, err)
-	srv.watchLimit = 3
+	// The root, docs and .vantage, which Vantage writes in every repository
+	// it serves; the fourth watch is spare until big takes it.
+	srv.watchLimit = 4
 	srv.goos = "linux" // the wording checked below
 	slowWatcherStarts(srv)
 

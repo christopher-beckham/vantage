@@ -241,9 +241,12 @@ does not stop at a prompt while the user is away ([§7](#7-edge-cases-and-how-ea
 - **The watcher must watch the outbox.** On `main` it prunes everything under
   `.vantage` except the inbox ([`watcher.go`](../../internal/live/watcher.go#L112-L118)), so it would
   never see a claim.
-- **`.vantage/.gitignore`** with `*` is written the first time the outbox is
-  created. It ignores itself too, so the user's repository shows no change
-  ([D8](#decision-ledger)).
+- **`.vantage/.gitignore`** with `*` is written with the guide, when Vantage
+  starts serving a repository. It ignores itself too, so the user's repository
+  shows no change ([D8](#decision-ledger)).
+- **The guide and the wait script are written for every repository Vantage
+  serves**, at every start ([D10](#decision-ledger)), so an agent asked to watch
+  before the first Send has them to follow.
 
 ## 7. Edge cases and how each is handled
 
@@ -287,13 +290,14 @@ does not stop at a prompt while the user is away ([§7](#7-edge-cases-and-how-ea
    is one plain command, and `watching.md` tells the agent to run one plain
    command at a time and to deliver with its file-writing tool and `mv`. With
    both, a three-round interactive session ran with no prompt at all.
-10. **Asked to watch before anything was sent, the agent finds no guide.**
-   Found by the same evals. `watching.md` is written by the first Send, or at
-   startup where `.vantage/` already exists, so a repository nobody has
-   reviewed has none, and the agent, told to read it, rightly stops. Starting
-   the watch before reviewing is the natural order, so this is open: Vantage
-   could write the guide for every repository it serves, or the skill could
-   carry the wait command as a fallback.
+10. **Asked to watch before anything was sent, the agent found no guide.**
+   Found by the same evals. `watching.md` was written by the first Send, or at
+   startup only where `.vantage/` already existed, so in a repository nobody had
+   reviewed, the agent told to read it rightly stopped. Starting the watch
+   before reviewing is the natural order, so Vantage now writes the guide, the
+   wait script and the `.gitignore` for every repository it serves
+   ([D10](#decision-ledger)). The cost is a `.vantage/` directory in each one,
+   which git never sees, and one more directory for the watcher.
 
 ## 8. Known gaps
 
@@ -340,5 +344,6 @@ does not stop at a prompt while the user is away ([§7](#7-edge-cases-and-how-ea
 | D7 | A stalled claim is reported, and only the reviewer re-queues it | 2026-11-04 | [§6](#6-vantages-side) |
 | D8 | Vantage writes `.vantage/.gitignore` containing `*` | 2026-11-04 | [§6](#6-vantages-side) |
 | D9 | The agent claims before reading and reports a failure as `.failed` with a reason file | 2026-11-04 | [§5](#5-starting-and-keeping-the-watch), [§7](#7-edge-cases-and-how-each-is-handled) |
+| D10 | Vantage writes `.vantage/` (the guide, the wait script and the `.gitignore`) for every repository it serves, at every start, not only after the first Send | 2026-11-05 | [§6](#6-vantages-side), [§7](#7-edge-cases-and-how-each-is-handled) |
 | OQ-RO1 | A claim is stalled after 15 minutes without progress, where progress is the claim or any inbox delivery for the document; the elapsed time is always shown; not configurable | 2026-11-04 | [§6](#6-vantages-side) |
 | OQ-RO2 | A batch's text is assembled in the browser by the code Copy uses, and posted on Send and on every edit of a sent comment; the server only handles files. Amended the same day: an earlier ruling for Go missed the clipboard and `vantage-md` constraints | 2026-11-04 | [§4](#4-a-batchs-lifecycle) |

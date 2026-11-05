@@ -392,18 +392,22 @@ func (w *Watcher) Start(ctx context.Context) error {
 	// Start returns only once fsw is closed, and every file with it.
 	defer w.releaseAllFiles()
 
+	// Write the watching guide and the wait script for every repository
+	// served, and rewrite them at every start. An agent is usually told to
+	// watch before the first Send, and without them it has nothing to follow;
+	// rewriting means an upgraded server never leaves an older version's
+	// instructions in front of one. The .gitignore written with them keeps
+	// all of it out of git. It comes before the walk, so .vantage is part of
+	// the startup tree rather than a new directory a moment later.
+	if w.store != nil {
+		if err := review.WriteWatchingGuide(w.root); err != nil {
+			w.logger.Warn("review: failed to write the watching guide", "error", err)
+		}
+	}
+
 	added := w.addRecursive(w.root)
 	w.seedGitStateFingerprints()
 	w.logStartup(added)
-
-	// Rewrite the watching guide wherever Vantage state already exists, so an
-	// upgraded server never leaves an older version's instructions in front of
-	// an agent. A repository with no .vantage directory gets nothing.
-	if w.store != nil {
-		if err := review.RefreshWatchingGuide(w.root); err != nil {
-			w.logger.Warn("review: failed to refresh the watching guide", "error", err)
-		}
-	}
 
 	// Deliveries that landed while the server was down are consumed before the
 	// first event can arrive.

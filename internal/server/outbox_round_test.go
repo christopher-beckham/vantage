@@ -488,6 +488,31 @@ func TestOutboxGuideIsRewrittenWhenTheServerStarts(t *testing.T) {
 	require.Equal(t, "", gitStatus(t, root), "the guide and its .gitignore show nothing in git")
 }
 
+// A repository nobody has reviewed gets the guide and the wait script at
+// startup too, because the agent is usually told to watch before the first
+// Send, and before this fix it found nothing to follow (§7 case 10).
+func TestOutboxGuideIsWrittenForARepositoryNobodyReviewed(t *testing.T) {
+	srv, root := singleRepoServer(t)
+	_, err := os.Stat(filepath.Join(root, ".vantage"))
+	require.True(t, os.IsNotExist(err), "the fixture starts with no Vantage state")
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- srv.Run(ctx) }()
+	defer func() {
+		cancel()
+		<-done
+		_ = srv.Shutdown(context.Background())
+	}()
+
+	waitFor(t, "the guide and the wait script", func() bool {
+		_, guide := os.Stat(filepath.Join(root, filepath.FromSlash(review.WatchingRel)))
+		_, script := os.Stat(filepath.Join(root, filepath.FromSlash(review.WaitScriptRel)))
+		return guide == nil && script == nil
+	})
+	require.Equal(t, "", gitStatus(t, root), "none of it shows in git")
+}
+
 func repeat[T any](v T, n int) []T {
 	out := make([]T, n)
 	for i := range out {

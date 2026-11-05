@@ -68,27 +68,6 @@ func TestWriteWatchingGuideKeepsAnExistingGitignore(t *testing.T) {
 	require.Equal(t, "someone's own rules\n", string(got))
 }
 
-func TestRefreshWatchingGuideCreatesNothingInAnUnreviewedRepo(t *testing.T) {
-	root := t.TempDir()
-
-	require.NoError(t, RefreshWatchingGuide(root))
-
-	_, err := os.Stat(filepath.Join(root, ".vantage"))
-	require.True(t, os.IsNotExist(err), "a repository nobody reviewed gets no .vantage directory")
-}
-
-func TestRefreshWatchingGuideWritesWhereVantageStateExists(t *testing.T) {
-	root := t.TempDir()
-	require.NoError(t, os.MkdirAll(InboxDir(root), 0o755))
-
-	require.NoError(t, RefreshWatchingGuide(root))
-
-	_, err := os.Stat(filepath.Join(root, filepath.FromSlash(WatchingRel)))
-	require.NoError(t, err)
-	_, err = os.Stat(filepath.Join(root, ".vantage", ".gitignore"))
-	require.NoError(t, err)
-}
-
 func TestEnsureOutboxCreatesTheDirectoryAndGuide(t *testing.T) {
 	root := t.TempDir()
 
