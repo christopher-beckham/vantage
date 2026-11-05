@@ -74,10 +74,9 @@ func RefreshWatchingGuide(root string) error {
 	return WriteWatchingGuide(root)
 }
 
-// WriteWatchingGuide writes the guide for root, and the .gitignore if there is
-// none. An existing .gitignore is someone's choice and is left alone. An
-// unchanged guide is left untouched, so a restart does not churn its mtime, and
-// a changed one is replaced by rename, so an agent reading it never sees half.
+// WriteWatchingGuide writes the guide and the wait script for root, and the
+// .gitignore if there is none. An existing .gitignore is someone's choice and
+// is left alone.
 func WriteWatchingGuide(root string) error {
 	dir := filepath.Join(root, ".vantage")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
@@ -91,8 +90,17 @@ func WriteWatchingGuide(root string) error {
 	} else if err != nil {
 		return err
 	}
-	want := bytes.ReplaceAll(watchingGuide, []byte(servedRootPlaceholder), []byte(root))
-	path := filepath.Join(root, filepath.FromSlash(WatchingRel))
+	guide := bytes.ReplaceAll(watchingGuide, []byte(servedRootPlaceholder), []byte(root))
+	if err := writeIfChanged(filepath.Join(root, filepath.FromSlash(WatchingRel)), guide); err != nil {
+		return err
+	}
+	return writeIfChanged(filepath.Join(root, filepath.FromSlash(WaitScriptRel)), waitScript)
+}
+
+// writeIfChanged leaves a file that already holds want untouched, so a restart
+// does not churn its mtime, and replaces one that does not by rename, so a
+// reader never sees half of it.
+func writeIfChanged(path string, want []byte) error {
 	if cur, err := os.ReadFile(path); err == nil && bytes.Equal(cur, want) {
 		return nil
 	}
@@ -140,13 +148,18 @@ type Batch struct {
 	Reason string     `json:"reason,omitempty"`
 }
 
-// WaitCommand is the background wait an agent runs between rounds. It lists the
-// directory rather than globbing it: under zsh, which is many users' shell, a
-// glob that matches nothing is an error from the shell itself, so redirecting
-// ls hides nothing and the wait writes a line every second for as long as it
-// runs. It exits only for a ready batch, since every other state adds a suffix
-// after ".md".
-const WaitCommand = `until ls .vantage/outbox 2>/dev/null | grep -q '\.md$'; do sleep 1; done`
+// WaitScriptRel is the repo-relative path of the wait an agent runs in the
+// background between rounds. Vantage writes it beside the guide, so it changes
+// with the running version too.
+const WaitScriptRel = ".vantage/wait-for-batch.sh"
+
+// WaitCommand is how an agent runs the wait. It is one plain command, so a
+// single permission rule allows it; the loop it runs would not be: Claude Code
+// cannot parse a pipe inside an until condition, and asks every round.
+const WaitCommand = "sh " + WaitScriptRel
+
+//go:embed wait-for-batch.sh
+var waitScript []byte
 
 // batchFooter ends every batch, so the instruction to keep watching is the last
 // thing the agent reads each round and a context summary cannot drop it.

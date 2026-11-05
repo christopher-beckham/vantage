@@ -162,8 +162,15 @@ the agent reads, the instruction to start watching again:
 
 ```markdown
 When you have delivered, start this again in the background, then end your turn:
-`until ls .vantage/outbox 2>/dev/null | grep -q '\.md$'; do sleep 1; done`
+`sh .vantage/wait-for-batch.sh`
 ```
+
+The wait is a script Vantage writes beside `watching.md` and rewrites at every
+start. Two trials shaped it. Run as a one-line loop, it either wrote an error
+every second under zsh, where a glob that matches nothing is the shell's own
+error, or, once rewritten without a glob, could not be allowed by any
+permission rule, because Claude Code cannot parse a pipe inside an `until`
+condition and asked at every round. One plain command avoids both.
 
 ## 5. Starting and keeping the watch
 
@@ -271,6 +278,22 @@ does not stop at a prompt while the user is away ([§7](#7-edge-cases-and-how-ea
    holds, at the round it holds them, so a new batch carries only new comments
    and new follow-ups. Until then, `watching.md` tells the agent to skip a
    comment it has already answered at that round.
+9. **A round stops at a permission prompt nobody is there to answer.** Found by
+   the agent evals, 2026-11-05 (`just agent-eval`). A permission rule matches a
+   plain command, and agents chain them: `cd … && mv …`, `; echo $?`, and the
+   one-line delivery command the batch itself shows. In Claude Code's standard
+   permission mode each of those asks, and the round waits for the user. Two
+   changes closed it in the evals: the wait is a script Vantage writes, so it
+   is one plain command, and `watching.md` tells the agent to run one plain
+   command at a time and to deliver with its file-writing tool and `mv`. With
+   both, a three-round interactive session ran with no prompt at all.
+10. **Asked to watch before anything was sent, the agent finds no guide.**
+   Found by the same evals. `watching.md` is written by the first Send, or at
+   startup where `.vantage/` already exists, so a repository nobody has
+   reviewed has none, and the agent, told to read it, rightly stops. Starting
+   the watch before reviewing is the natural order, so this is open: Vantage
+   could write the guide for every repository it serves, or the skill could
+   carry the wait command as a fallback.
 
 ## 8. Known gaps
 
@@ -279,10 +302,15 @@ does not stop at a prompt while the user is away ([§7](#7-edge-cases-and-how-ea
   ([`commands.go`](../../internal/review/commands.go#L371)), so anything saved between the
   agent's edit and its delivery shows in the reply's diff. This is true of
   copy and paste today; the busy banner is the mitigation.
-- **When a wake-up lands during a busy turn is unverified.** Claude Code
-  notifies a session when a background command exits, but whether that can
-  arrive between tool calls or only after the turn ends has not been tested.
-  Either is acceptable ([D3](#decision-ledger)); it only changes the delay.
+- **A wake-up from idle works; one during a busy turn is still unmeasured.**
+  The interactive eval saw an idle session claim a batch 7 seconds after Send,
+  and a Send made while the agent worked was answered in the same session.
+  Whether that second wake arrived between tool calls or after the turn ended
+  was not measured. Either is acceptable ([D3](#decision-ledger)); it only
+  changes the delay.
+- **A headless session cannot be woken.** `claude -p` ends with its turn, so
+  the headless evals check that the wait was restarted, not that it wakes
+  anything. The interactive eval covers waking.
 - **Only agents with background commands can watch.** Any other agent, and a
   chat model with no tools, keeps using Copy.
 

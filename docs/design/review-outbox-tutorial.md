@@ -69,7 +69,15 @@ second purpose.
 The agent waits with one shell command, run in the background:
 
 ```bash
-until ls .vantage/outbox 2>/dev/null | grep -q '\.md$'; do sleep 1; done
+sh .vantage/wait-for-batch.sh
+```
+
+That script, which Vantage writes beside `watching.md`, is a loop:
+
+```bash
+until ls .vantage/outbox 2>/dev/null | grep -q '\.md$'; do
+	sleep 1
+done
 ```
 
 Once a second it asks whether any file ending in `.md` is in the outbox. When
@@ -99,11 +107,15 @@ adds something to the end of the name (`x.md.claimed`, `x.md.failed`), and none
 of those end in `.md`. Only a batch that is ready to be answered wakes the
 agent. The rest of this document writes that as `*.md`.
 
-The command lists the directory and filters the names, rather than asking for
-`.vantage/outbox/*.md` directly, because of zsh. In zsh a pattern that matches
-nothing is an error from the shell itself, so the first version of this command
-printed "no matches found" every second while it waited: 38,000 lines in the
-first day-long trial.
+Why a script, and not the loop typed straight into the shell? Two trials. The
+first version asked for `.vantage/outbox/*.md` directly, and in zsh a pattern
+that matches nothing is an error from the shell itself, so it printed "no
+matches found" every second: 38,000 lines in a day-long trial. The second,
+listing the directory and filtering the names as above, fixed that but could not
+be allowed by a permission rule: Claude Code cannot parse a pipe inside an
+`until` condition, so in its standard permission mode it asked before every
+round. One plain command, `sh .vantage/wait-for-batch.sh`, is allowed by one
+rule and runs under `sh` whatever the user's shell is.
 
 ## 4. One whole round
 

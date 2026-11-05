@@ -62,7 +62,7 @@ const allowedTools = [
   "Bash(mkdir:*)",
   "Bash(sort:*)",
   "Bash(pwd)",
-  "Bash(until:*)",
+  "Bash(sh .vantage/wait-for-batch.sh)",
   "Bash(git status:*)",
   "Bash(git diff:*)",
   "Bash(uvx vantage-check:*)",
@@ -252,6 +252,10 @@ class Scenario {
       "--output-format",
       "stream-json",
       "--verbose",
+      // The strict case: only the list below is allowed. A user's own default
+      // may be auto mode, where a classifier decides instead of a prompt.
+      "--permission-mode",
+      "default",
       "--setting-sources",
       "project,local",
       "--strict-mcp-config",
@@ -406,7 +410,7 @@ function restartedTheWait(s: Session): boolean {
       ({ c }) =>
         c.name === "Bash" &&
         c.input.run_in_background === true &&
-        commandOf(c).includes("until ls .vantage/outbox"),
+        commandOf(c).includes("wait-for-batch.sh"),
     );
   if (waits.length === 0) return false;
   const last = waits[waits.length - 1]!.i;
@@ -612,6 +616,236 @@ describe("an agent watching for Vantage reviews", () => {
     }
   });
 });
+
+// ------------------------------------------------- an interactive session ---
+
+/**
+ * A real interactive Claude Code session in a detached tmux window, which is
+ * the only way to see a background wait wake an idle session: a headless one
+ * ends with its turn. The test plays the reviewer from outside, through the
+ * API. It accepts only the question whether to trust the temporary
+ * repository it created. Every permission prompt is refused and recorded,
+ * since a user who is away would have left that round stuck.
+ */
+class Terminal {
+  readonly name = `vantage-eval-${process.pid}-${Date.now()}`;
+  readonly prompts: string[] = [];
+  private trusted = false;
+
+  constructor(private readonly repo: string) {
+    const quoted = allowedTools.map((t) => `'${t}'`).join(" ");
+    const cmd =
+      `cd '${repo}' && claude --permission-mode default --setting-sources project,local --strict-mcp-config ` +
+      `--allowedTools ${quoted}` +
+      (model ? ` --model '${model}'` : "");
+    tmux("new-session", "-d", "-s", this.name, "-x", "200", "-y", "60", cmd);
+  }
+
+  pane(): string {
+    return tmux("capture-pane", "-p", "-t", this.name, "-S", "-80");
+  }
+
+  type(text: string) {
+    tmux("send-keys", "-t", this.name, "-l", text);
+    tmux("send-keys", "-t", this.name, "Enter");
+  }
+
+  /** Answers whatever the session is asking, so a test can keep going. */
+  tend() {
+    const p = this.pane();
+    if (!this.trusted && /Yes, I trust this folder/.test(p)) {
+      // The default is "No, exit", so the answer is chosen, not defaulted.
+      tmux("send-keys", "-t", this.name, "Down");
+      tmux("send-keys", "-t", this.name, "Enter");
+      this.trusted = true;
+      return;
+    }
+    if (/Do you want to (proceed|make this edit|create)/i.test(p)) {
+      // Never approved: the test would be one agent granting another
+      // permissions nobody looked at. It is refused and recorded instead, and
+      // a round that needed it fails, which is what a user who is away sees.
+      const tail = p.trim().split("\n").slice(-14).join("\n");
+      this.prompts.push(tail);
+      tmux("send-keys", "-t", this.name, "Escape");
+    }
+  }
+
+  close(log: string) {
+    try {
+      writeFileSync(log, this.pane());
+    } finally {
+      spawnSync("tmux", ["kill-session", "-t", this.name]);
+    }
+  }
+}
+
+function tmux(...args: string[]): string {
+  const r = spawnSync("tmux", args, { encoding: "utf8" });
+  if (r.status !== 0) throw new Error(`tmux ${args[0]}: ${r.stderr}`);
+  return r.stdout;
+}
+
+/** The pids of background waits running in repo. */
+function waitsIn(repo: string): number[] {
+  const r = spawnSync("pgrep", ["-f", "wait-for-batch.sh"], {
+    encoding: "utf8",
+  });
+  return r.stdout
+    .split("\n")
+    .filter(Boolean)
+    .map(Number)
+    .filter((pid) => {
+      const cwd = spawnSync(
+        "lsof",
+        ["-a", "-p", String(pid), "-d", "cwd", "-Fn"],
+        {
+          encoding: "utf8",
+        },
+      ).stdout;
+      return cwd.split("\n").some((l) => l === `n${repo}`);
+    });
+}
+
+async function until(
+  what: string,
+  term: Terminal,
+  cond: () => boolean | Promise<boolean>,
+  timeoutMs = 6 * 60_000,
+): Promise<number> {
+  const start = Date.now();
+  for (;;) {
+    term.tend();
+    if (await cond()) return Date.now() - start;
+    if (Date.now() - start > timeoutMs) {
+      throw new Error(
+        `timed out waiting for ${what}. The screen:\n${term.pane()}`,
+      );
+    }
+    await new Promise((r) => setTimeout(r, 500));
+  }
+}
+
+describe("an interactive session watching for Vantage reviews", () => {
+  test("keeps watching across rounds: wakes from idle, takes a follow-up, and a Send while it works", async () => {
+    const sc = new Scenario("interactive");
+    sc.commit([releaseDoc]);
+    // A repository reviewed before, so Vantage writes the guide at startup. In
+    // one nobody has reviewed, the guide only appears with the first Send, and
+    // a session asked to watch before that finds nothing to follow.
+    mkdirSync(join(sc.repo, ".vantage"));
+    await sc.serve();
+    const term = new Terminal(sc.repo);
+    const timings: string[] = [];
+    const claimed = () => sc.outbox().some((f) => f.endsWith(".md.claimed"));
+    const roundDone = async (path: string, id: string, n: number) =>
+      sc.outbox().length === 0 &&
+      (await sc.agentReplies(path, id)).length === n &&
+      waitsIn(sc.repo).length > 0;
+    try {
+      await until(
+        "the session to start",
+        term,
+        () => /for shortcuts|shift\+tab to cycle/i.test(term.pane()),
+        60_000,
+      );
+      term.type(prompt);
+      const armed = await until(
+        "the first wait",
+        term,
+        () => waitsIn(sc.repo).length > 0,
+      );
+      timings.push(`started watching in ${s(armed)}`);
+      // Let the turn end, so round 1 has to wake an idle session.
+      await new Promise((r) => setTimeout(r, 15_000));
+
+      // Round 1: a comment sent to an idle session.
+      const [a] = await sc.comment(releaseDoc, [
+        {
+          line: 3,
+          text: "Say who picks the release captain: it is the team lead.",
+        },
+      ]);
+      await sc.send(releaseDoc);
+      timings.push(
+        `round 1: claimed in ${s(await until("round 1's claim", term, claimed))}`,
+      );
+      timings.push(
+        `round 1: done in ${s(await until("round 1", term, () => roundDone(releaseDoc.path, a!, 1)))}`,
+      );
+
+      // Round 2: a follow-up on the same comment.
+      await sc.api(
+        "POST",
+        `/review/comments/${enc(a!)}/replies?path=${enc(releaseDoc.path)}`,
+        {
+          id: `r-${Date.now()}`,
+          text: "Also say the backup captain is named at the same time as the captain.",
+        },
+      );
+      await sc.send(releaseDoc);
+      timings.push(
+        `round 2: claimed in ${s(await until("round 2's claim", term, claimed))}`,
+      );
+      timings.push(
+        `round 2: done in ${s(await until("round 2", term, () => roundDone(releaseDoc.path, a!, 2)))}`,
+      );
+
+      // Round 3: a second Send while the agent is working on the first.
+      const [b] = await sc.comment(releaseDoc, [
+        {
+          line: 6,
+          text: "Write the rule down: if the smoke tests fail, skip the release.",
+        },
+      ]);
+      await sc.send(releaseDoc);
+      await until("round 3's claim", term, claimed);
+      const [c] = await sc.comment(releaseDoc, [
+        { line: 1, text: "Rename the heading to 'How we release'." },
+      ]);
+      await sc.send(releaseDoc);
+      const both = await until(
+        "round 3, both batches",
+        term,
+        async () =>
+          sc.outbox().length === 0 &&
+          (await sc.agentReplies(releaseDoc.path, b!)).length === 1 &&
+          (await sc.agentReplies(releaseDoc.path, c!)).length === 1 &&
+          waitsIn(sc.repo).length > 0,
+      );
+      timings.push(`round 3: both batches done in ${s(both)}`);
+
+      const text = sc.read(releaseDoc.path) ?? "";
+      expect.soft(text).toMatch(/team lead/i);
+      expect.soft(text).toMatch(/backup/i);
+      expect.soft(text).toMatch(/How we release/i);
+      expect.soft(text).not.toMatch(/no written rule/i);
+      expect
+        .soft(
+          (await sc.agentReplies(releaseDoc.path, a!)).length,
+          "comment A answered once per round, not repeated",
+        )
+        .toBe(2);
+      expect
+        .soft(sc.git("status", "--porcelain").trim())
+        .toBe(`M ${releaseDoc.path}`);
+      expect
+        .soft(waitsIn(sc.repo).length, "exactly one wait left running")
+        .toBe(1);
+      expect
+        .soft(term.prompts, "asked nothing a user who is away could not answer")
+        .toEqual([]);
+    } finally {
+      console.log(`[interactive] ${timings.join("; ")}`);
+      if (term.prompts.length)
+        console.log(`[interactive] prompts:\n${term.prompts.join("\n---\n")}`);
+      term.close(join(sc.repo, "..", "screen.txt"));
+      for (const pid of waitsIn(sc.repo)) process.kill(pid);
+      sc.stop();
+    }
+  });
+});
+
+const s = (ms: number) => `${(ms / 1000).toFixed(0)}s`;
 
 // --------------------------------------------------------------- helpers ---
 

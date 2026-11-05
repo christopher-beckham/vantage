@@ -29,9 +29,10 @@ batch, including one that has never seen the document.
 2. **Wait in the background.** Run this as a background command, then end your
    turn:
 
-       until ls .vantage/outbox 2>/dev/null | grep -q '\.md$'; do sleep 1; done
+       sh .vantage/wait-for-batch.sh
 
-   It exits when a batch arrives, and that wakes you.
+   It exits when a batch arrives, and that wakes you. Run it exactly as written,
+   not the loop inside it, so the one permission rule below allows it.
 3. **Claim the batch before you read it.** Rename `NAME.md` to
    `NAME.md.claimed`.
    - If the rename fails because the file is not there, another session or
@@ -65,11 +66,21 @@ you may be unable to edit the file. Then:
 A comment you disagree with is not a failure. Answer it with a reply that says
 why.
 
+## Run one plain command at a time
+
+Nobody is at the terminal to approve a prompt during a round, and a permission
+rule only matches a plain command. So run each command on its own, from the
+checkout's root, where you already are: no `cd`, no `&&`, `;` or `|`, no
+variables, and nothing appended such as `; echo $?`. To deliver your replies,
+write the delivery under its scratch name with your file-writing tool, then
+rename it with a plain `mv`, instead of the one-line delivery command the batch
+shows. A round that stops at a prompt stays stuck until the user comes back.
+
 ## Permissions
 
 A round runs these without anyone at the terminal, so allow them ahead of time:
 
-- the background wait above
+- `sh .vantage/wait-for-batch.sh`, the background wait above
 - renaming and deleting files under `.vantage/outbox/`
 - writing files under `.vantage/inbox/`
 - editing the repository's Markdown documents

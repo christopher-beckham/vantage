@@ -1,7 +1,9 @@
 package review
 
 import (
+	"context"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -193,4 +195,33 @@ func TestOutboxBatchesIsEmptyWithoutAnOutbox(t *testing.T) {
 func TestWatchingGuideAndBatchFooterShareTheWaitCommand(t *testing.T) {
 	require.Contains(t, string(watchingGuide), WaitCommand)
 	require.Contains(t, batchFooter, WaitCommand)
+}
+
+// The script Vantage writes keeps waiting through every state but ready, and
+// exits once a batch is ready, whatever the shell of the user who runs it.
+func TestWaitScriptExitsOnlyForAReadyBatch(t *testing.T) {
+	root := t.TempDir()
+	require.NoError(t, EnsureOutbox(root))
+	out := OutboxDir(root)
+	for _, name := range []string{"a.md.claimed", "b.md.failed", "b.md.failed.reason", "c.md.writing", "d.md.updating"} {
+		require.NoError(t, os.WriteFile(filepath.Join(out, name), nil, 0o644))
+	}
+	script := filepath.Join(root, filepath.FromSlash(WaitScriptRel))
+
+	ctx, cancel := context.WithTimeout(context.Background(), 1500*time.Millisecond)
+	defer cancel()
+	waiting := exec.CommandContext(ctx, "sh", script)
+	waiting.Dir = t.TempDir() // the script finds the repository from its own path
+	err := waiting.Run()
+	require.Error(t, err, "no batch is ready, so it is still waiting")
+	require.ErrorIs(t, ctx.Err(), context.DeadlineExceeded)
+
+	require.NoError(t, os.WriteFile(filepath.Join(out, "e.md"), nil, 0o644))
+	ctx2, cancel2 := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel2()
+	ready := exec.CommandContext(ctx2, "sh", script)
+	ready.Dir = t.TempDir()
+	output, err := ready.CombinedOutput()
+	require.NoError(t, err, "a ready batch ends the wait")
+	require.Empty(t, string(output), "the wait prints nothing")
 }
