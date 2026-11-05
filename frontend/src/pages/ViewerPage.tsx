@@ -53,6 +53,11 @@ import {
   isPendingForAgent,
   useReviewStore,
 } from "../stores/useReviewStore";
+import {
+  hasUnclaimedBatch,
+  outboxStatus,
+  useOutboxStore,
+} from "../stores/useOutboxStore";
 import { ReviewPanel } from "../components/ReviewPanel";
 import { useLineAnchor } from "../hooks/useLineAnchor";
 import { useHeaderFit } from "../hooks/useHeaderFit";
@@ -275,6 +280,12 @@ export const ViewerPage: React.FC = () => {
   const pendingReviewCount = reviewComments.filter(isPendingForAgent).length;
   const activeReviewCount = reviewComments.filter((c) => !c.resolved).length;
   const copyAllReviewComments = useReviewStore((s) => s.copyAllToClipboard);
+  const reviewPendingPayload = useReviewStore((s) => s.pendingPayload);
+  const reviewFilePath = useReviewStore((s) => s.filePath);
+  const outboxPath = useOutboxStore((s) => s.path);
+  const outboxBatches = useOutboxStore((s) => s.batches);
+  const loadOutbox = useOutboxStore((s) => s.load);
+  const sendToOutbox = useOutboxStore((s) => s.send);
   const dismissAllReview = useReviewStore((s) => s.dismissAll);
   const dismissAnsweredReview = useReviewStore((s) => s.dismissAnswered);
   // Answered, not outdated. "Outdated" is an anchor fact — the text this was
@@ -366,6 +377,28 @@ export const ViewerPage: React.FC = () => {
     dismissAllReview,
     dismissAnsweredReview,
   ]);
+
+  // Send to a watching agent (docs/design/review-outbox.md). The outbox is read
+  // whenever review mode shows a document, so the button says where the last
+  // batch stands, and again on every outbox_changed push (useWebSocket).
+  useEffect(() => {
+    if (isReviewMode && reviewFilePath !== null)
+      void loadOutbox(reviewFilePath);
+  }, [isReviewMode, reviewFilePath, loadOutbox]);
+  const docBatches = outboxPath === reviewFilePath ? outboxBatches : [];
+  const sendStatus = outboxStatus(docBatches);
+  const sendState = hasUnclaimedBatch(docBatches)
+    ? "sent"
+    : sendStatus?.tone === "working"
+      ? "working"
+      : sendStatus?.tone === "failed"
+        ? "failed"
+        : "idle";
+  const handleReviewSend = useCallback(async () => {
+    const text = reviewPendingPayload();
+    if (reviewFilePath === null || text === null) return;
+    await sendToOutbox(reviewFilePath, text);
+  }, [reviewPendingPayload, reviewFilePath, sendToOutbox]);
 
   const handleReviewCopy = useCallback(async () => {
     const ok = await copyAllReviewComments();
@@ -818,6 +851,9 @@ export const ViewerPage: React.FC = () => {
       onToggle={handleReviewToggle}
       onDismiss={handleReviewDismiss}
       onCopy={handleReviewCopy}
+      sendState={sendState}
+      sendTitle={sendStatus?.text}
+      onSend={handleReviewSend}
       onManage={() => setReviewPanelOpen(true)}
     />
   );

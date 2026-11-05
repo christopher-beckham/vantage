@@ -177,3 +177,38 @@ describe("ReviewControls", () => {
     ).toBeInTheDocument();
   });
 });
+
+describe("ReviewControls — Send", () => {
+  it("is not drawn when the page offers no Send", () => {
+    renderControls();
+    expect(screen.queryByRole("button", { name: "Send" })).toBeNull();
+  });
+
+  it("sends when comments wait on the agent", () => {
+    const onSend = vi.fn();
+    renderControls({ onSend });
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+    expect(onSend).toHaveBeenCalledOnce();
+  });
+
+  it("is not drawn when nothing waits on the agent", () => {
+    renderControls({ onSend: vi.fn(), pendingCount: 0 });
+    expect(screen.queryByRole("button", { name: "Send" })).toBeNull();
+  });
+
+  it("says Sent and stays off while the batch is unclaimed", () => {
+    renderControls({
+      onSend: vi.fn(),
+      sendState: "sent",
+      sendTitle: "Sent, not claimed yet",
+    });
+    const sent = screen.getByRole("button", { name: "Sent" });
+    expect(sent).toBeDisabled();
+    expect(sent).toHaveAttribute("data-tip", "Sent, not claimed yet");
+  });
+
+  it("says Working once an agent has claimed it, and can send a new round", () => {
+    renderControls({ onSend: vi.fn(), sendState: "working" });
+    expect(screen.getByRole("button", { name: "Working" })).toBeEnabled();
+  });
+});

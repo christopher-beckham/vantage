@@ -3,6 +3,7 @@ import {
   ClipboardCopy,
   MessageSquare,
   MessageSquarePlus,
+  Send,
 } from "lucide-react";
 
 import { CommentsDriftedIndicator } from "./CommentsDriftedIndicator";
@@ -61,9 +62,20 @@ export interface ReviewControlsProps {
   copied: boolean;
   /** The Review toggle's tooltip, which carries the Open Questions count. */
   toggleTitle: string;
+  /**
+   * Where this document's newest batch for a watching agent stands
+   * (docs/design/review-outbox.md): nothing sent, sent and not claimed yet,
+   * claimed by an agent, or given up on. Send is off while one is still
+   * unclaimed, so a second click does not queue the same comments twice.
+   */
+  sendState?: "idle" | "sent" | "working" | "failed";
+  /** What Send's tooltip says about that state, such as the agent's reason. */
+  sendTitle?: string;
   onToggle: () => void;
   onDismiss: () => void;
   onCopy: () => void;
+  /** Hand the comments to a watching agent. Absent, there is no Send. */
+  onSend?: () => void;
   onManage: () => void;
 }
 
@@ -78,11 +90,20 @@ export const ReviewControls: React.FC<ReviewControlsProps> = ({
   dismissConfirm,
   copied,
   toggleTitle,
+  sendState = "idle",
+  sendTitle,
   onToggle,
   onDismiss,
   onCopy,
+  onSend,
   onManage,
 }) => {
+  const sendLabel =
+    sendState === "sent"
+      ? "Sent"
+      : sendState === "working"
+        ? "Working"
+        : "Send";
   // An answered comment is still in the list; dismissing it is the sweep that
   // clears what the agent has finished with. With none answered, the click
   // discards comments nobody has replied to, which is why it asks first.
@@ -156,6 +177,32 @@ export const ReviewControls: React.FC<ReviewControlsProps> = ({
                 }
                 label={copied ? "Copied!" : `Copy ${pendingCount}`}
                 reserve={[`Copy ${pendingCount}`, "Copied!"]}
+                labelClassName="hdr-label"
+              />
+            </button>
+          )}
+          {onSend && pendingCount > 0 && (
+            <button
+              type="button"
+              onClick={onSend}
+              disabled={sendState === "sent"}
+              data-tip={
+                sendTitle ??
+                `Send ${pendingCount} ${plural(pendingCount, "comment")} to an agent watching this repository`
+              }
+              className={cn(
+                "flex items-center gap-1.5 text-xs rounded-lg px-2 py-1.5 transition-colors cursor-pointer disabled:cursor-default disabled:opacity-60",
+                // Copy's chip: the same purple marks the agent-facing action,
+                // and colors the contrast guard already measures.
+                sendState === "failed"
+                  ? "text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/30 hover:bg-red-100 dark:hover:bg-red-900/50"
+                  : "text-purple-600 dark:text-purple-400 bg-purple-50 dark:bg-purple-900/30 hover:bg-purple-100 dark:hover:bg-purple-900/50",
+              )}
+            >
+              <ReservedLabel
+                icon={<Send size={RESERVED_ICON_SIZE} />}
+                label={sendLabel}
+                reserve={["Send", "Sent", "Working"]}
                 labelClassName="hdr-label"
               />
             </button>
