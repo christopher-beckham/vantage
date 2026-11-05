@@ -69,7 +69,7 @@ second purpose.
 The agent waits with one shell command, run in the background:
 
 ```bash
-until ls .vantage/outbox/*.md >/dev/null 2>&1; do sleep 1; done
+until ls .vantage/outbox 2>/dev/null | grep -q '\.md$'; do sleep 1; done
 ```
 
 Once a second it asks whether any file ending in `.md` is in the outbox. When
@@ -94,9 +94,16 @@ If the wait had been watching for changes, the change would have happened
 before it started, and it would have missed it. So no batch is lost because the
 agent was busy, or because no session was open.
 
-The glob `*.md` matters too. Every other state of a batch adds something to the
-end of the name (`x.md.claimed`, `x.md.failed`), and none of those match
-`*.md`. Only a batch that is ready to be answered wakes the agent.
+The pattern `\.md$`, "ends in `.md`", matters too. Every other state of a batch
+adds something to the end of the name (`x.md.claimed`, `x.md.failed`), and none
+of those end in `.md`. Only a batch that is ready to be answered wakes the
+agent. The rest of this document writes that as `*.md`.
+
+The command lists the directory and filters the names, rather than asking for
+`.vantage/outbox/*.md` directly, because of zsh. In zsh a pattern that matches
+nothing is an error from the shell itself, so the first version of this command
+printed "no matches found" every second while it waited: 38,000 lines in the
+first day-long trial.
 
 ## 4. One whole round
 

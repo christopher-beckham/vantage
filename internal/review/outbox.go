@@ -140,6 +140,14 @@ type Batch struct {
 	Reason string     `json:"reason,omitempty"`
 }
 
+// WaitCommand is the background wait an agent runs between rounds. It lists the
+// directory rather than globbing it: under zsh, which is many users' shell, a
+// glob that matches nothing is an error from the shell itself, so redirecting
+// ls hides nothing and the wait writes a line every second for as long as it
+// runs. It exits only for a ready batch, since every other state adds a suffix
+// after ".md".
+const WaitCommand = `until ls .vantage/outbox 2>/dev/null | grep -q '\.md$'; do sleep 1; done`
+
 // batchFooter ends every batch, so the instruction to keep watching is the last
 // thing the agent reads each round and a context summary cannot drop it.
 const batchFooter = `
@@ -148,7 +156,7 @@ const batchFooter = `
 When you have delivered your replies, delete this batch's ` + "`.claimed`" + ` file,
 start this again **in the background**, then end your turn:
 
-` + "```bash\nuntil ls .vantage/outbox/*.md >/dev/null 2>&1; do sleep 1; done\n```" + `
+` + "```bash\n" + WaitCommand + "\n```" + `
 
 The loop, and what to do when a batch cannot be answered, is in
 ` + "`" + WatchingRel + "`" + `.

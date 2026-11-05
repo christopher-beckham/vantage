@@ -270,7 +270,7 @@ func (a *fakeAgent) answer(claimed string) {
 	body, err := os.ReadFile(claimed)
 	require.NoError(a.t, err)
 	text := string(body)
-	require.Contains(a.t, text, "until ls .vantage/outbox/*.md", "every batch ends by telling the agent to wait again")
+	require.Contains(a.t, text, review.WaitCommand, "every batch ends by telling the agent to wait again")
 
 	doc := filepath.Join(a.root, "doc.md")
 	cur, err := os.ReadFile(doc)

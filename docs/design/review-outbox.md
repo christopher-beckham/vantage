@@ -162,7 +162,7 @@ the agent reads, the instruction to start watching again:
 
 ```markdown
 When you have delivered, start this again in the background, then end your turn:
-`until ls .vantage/outbox/*.md >/dev/null 2>&1; do sleep 1; done`
+`until ls .vantage/outbox 2>/dev/null | grep -q '\.md$'; do sleep 1; done`
 ```
 
 ## 5. Starting and keeping the watch

@@ -111,7 +111,7 @@ func TestWriteBatchWritesACompleteBatchUnderAnOldestFirstName(t *testing.T) {
 	got, err := os.ReadFile(filepath.Join(OutboxDir(root), name))
 	require.NoError(t, err)
 	require.True(t, strings.HasPrefix(string(got), "## Review Comments\n"))
-	require.Contains(t, string(got), "until ls .vantage/outbox/*.md", "every batch ends with the instruction to wait again")
+	require.Contains(t, string(got), WaitCommand, "every batch ends with the instruction to wait again")
 	require.Contains(t, string(got), WatchingRel)
 	entries, err := os.ReadDir(OutboxDir(root))
 	require.NoError(t, err)
@@ -186,4 +186,11 @@ func TestOutboxBatchesIsEmptyWithoutAnOutbox(t *testing.T) {
 	got, err := OutboxBatches(t.TempDir(), "a.md")
 	require.NoError(t, err)
 	require.Empty(t, got)
+}
+
+// The guide and every batch's footer tell the agent to run the same wait, so
+// a fix to one cannot leave the other behind.
+func TestWatchingGuideAndBatchFooterShareTheWaitCommand(t *testing.T) {
+	require.Contains(t, string(watchingGuide), WaitCommand)
+	require.Contains(t, batchFooter, WaitCommand)
 }

@@ -29,7 +29,7 @@ batch, including one that has never seen the document.
 2. **Wait in the background.** Run this as a background command, then end your
    turn:
 
-       until ls .vantage/outbox/*.md >/dev/null 2>&1; do sleep 1; done
+       until ls .vantage/outbox 2>/dev/null | grep -q '\.md$'; do sleep 1; done
 
    It exits when a batch arrives, and that wakes you.
 3. **Claim the batch before you read it.** Rename `NAME.md` to

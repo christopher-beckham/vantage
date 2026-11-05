@@ -406,8 +406,7 @@ function restartedTheWait(s: Session): boolean {
       ({ c }) =>
         c.name === "Bash" &&
         c.input.run_in_background === true &&
-        commandOf(c).includes("until ls") &&
-        commandOf(c).includes(".vantage/outbox"),
+        commandOf(c).includes("until ls .vantage/outbox"),
     );
   if (waits.length === 0) return false;
   const last = waits[waits.length - 1]!.i;
