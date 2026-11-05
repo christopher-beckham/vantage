@@ -8,6 +8,7 @@ import { useDegradedStore } from "../stores/useDegradedStore";
 import { useFilePickerStore } from "../stores/useFilePickerStore";
 import { useAllRecentsStore } from "../stores/useAllRecentsStore";
 import { usePlanningStore } from "../stores/usePlanningStore";
+import { useOutboxStore } from "../stores/useOutboxStore";
 import { WebSocketMessage } from "../types";
 import { isStaticMode } from "../lib/staticMode";
 import { filesWithin, isWithin, renamedTo } from "../lib/removedDirs";
@@ -499,6 +500,21 @@ export const useWebSocket = (options: UseWebSocketOptions = {}) => {
           wsLog.log("[ws] review_changed: %s", message.path);
           useReviewStore.getState().loadReview(message.path);
         }
+        return;
+      }
+
+      if (message.type === "outbox_changed") {
+        // An agent claimed, answered or gave up on a batch, or Vantage wrote
+        // one. The push names no document, so the list on screen is fetched
+        // again; the store ignores it until the panel has loaded one.
+        if (!viewer) return;
+        const { reposLoaded, isMultiRepo, currentRepo } =
+          useRepoStore.getState();
+        if (!reposLoaded) return;
+        if (isMultiRepo && (!currentRepo || message.repo !== currentRepo)) {
+          return;
+        }
+        void useOutboxStore.getState().reload();
         return;
       }
 

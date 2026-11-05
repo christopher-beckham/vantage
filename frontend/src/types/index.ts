@@ -67,6 +67,7 @@ export interface WebSocketMessage {
   type:
     | "files_changed"
     | "review_changed"
+    | "outbox_changed"
     | "repos_changed"
     | "starred_changed"
     | "degraded_changed"

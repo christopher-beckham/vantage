@@ -16,6 +16,7 @@ import {
   X,
   CheckCircle2,
   AlertCircle,
+  Send,
 } from "lucide-react";
 import {
   hasAgentReaction,
@@ -24,6 +25,11 @@ import {
   reviewTarget,
   useReviewStore,
 } from "../stores/useReviewStore";
+import {
+  hasUnclaimedBatch,
+  outboxStatus,
+  useOutboxStore,
+} from "../stores/useOutboxStore";
 import type { CommentReaction, ReviewComment } from "../types";
 import { AnchoredMenu } from "./AnchoredMenu";
 import { CommentBoxFoot, CommentBoxTextarea } from "./CommentBoxFields";
@@ -99,6 +105,13 @@ export const ReviewPanel: React.FC<ReviewPanelProps> = ({
     (s) => s.copyCommentToClipboard,
   );
   const endReview = useReviewStore((s) => s.endReview);
+  const pendingPayload = useReviewStore((s) => s.pendingPayload);
+  const outboxPath = useOutboxStore((s) => s.path);
+  const outboxBatches = useOutboxStore((s) => s.batches);
+  const outboxSending = useOutboxStore((s) => s.sending);
+  const outboxError = useOutboxStore((s) => s.error);
+  const loadOutbox = useOutboxStore((s) => s.load);
+  const sendToOutbox = useOutboxStore((s) => s.send);
 
   const [filter, setFilter] = useState<Filter>("all");
   const [copied, setCopied] = useState(false);
@@ -128,6 +141,11 @@ export const ReviewPanel: React.FC<ReviewPanelProps> = ({
   // the footer button, or null.  A clipboard write can be rejected (missing
   // permission, non-secure context) and used to fail completely silently.
   const [copyFailed, setCopyFailed] = useState<string | null>(null);
+  // The outbox is read when the panel shows a document, and again on every
+  // outbox_changed push (useWebSocket).
+  useEffect(() => {
+    if (isOpen && filePath !== null) void loadOutbox(filePath);
+  }, [isOpen, filePath, loadOutbox]);
   const copyTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const confirmTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   // One ref per confirm: sharing a single timer let arming either one cancel
@@ -237,6 +255,19 @@ export const ReviewPanel: React.FC<ReviewPanelProps> = ({
 
   const handleCopy = async () => {
     flashCopied("all", await copyAllToClipboard());
+  };
+
+  // Send hands the comments to a watching agent through the outbox
+  // (docs/design/review-outbox.md) with the very text Copy would put on the
+  // clipboard. It is off while an earlier batch for this document still waits
+  // to be claimed, so a second click does not queue the same comments twice.
+  const batches = outboxPath === filePath ? outboxBatches : [];
+  const status = outboxStatus(batches);
+  const sendBlocked = hasUnclaimedBatch(batches);
+  const handleSend = async () => {
+    const text = pendingPayload();
+    if (filePath === null || text === null) return;
+    await sendToOutbox(filePath, text);
   };
 
   const handleCopyComment = async (id: string) => {
@@ -597,6 +628,25 @@ export const ReviewPanel: React.FC<ReviewPanelProps> = ({
           )}
         </div>
 
+        {comments.length > 0 && (status !== null || outboxError !== null) && (
+          <div
+            role="status"
+            className={`px-4 pt-2 -mb-1 text-xs flex items-center gap-1.5 shrink-0 ${
+              outboxError !== null || status?.tone === "failed"
+                ? "text-red-600 dark:text-red-400"
+                : status?.tone === "working"
+                  ? "text-blue-600 dark:text-blue-400"
+                  : "text-slate-500 dark:text-slate-400"
+            }`}
+          >
+            {outboxError !== null || status?.tone === "failed" ? (
+              <AlertCircle size={12} />
+            ) : (
+              <Send size={12} />
+            )}
+            <span>{outboxError ?? status?.text}</span>
+          </div>
+        )}
         {comments.length > 0 && (
           <div className="px-4 py-3 border-t border-slate-200 dark:border-slate-700 flex items-center gap-2 shrink-0">
             {activeCount > 0 && (
@@ -634,6 +684,18 @@ export const ReviewPanel: React.FC<ReviewPanelProps> = ({
                   <ClipboardCopy size={12} /> Copy ({pendingCount})
                 </>
               )}
+            </button>
+            <button
+              onClick={handleSend}
+              disabled={pendingCount === 0 || sendBlocked || outboxSending}
+              title={
+                sendBlocked
+                  ? "An earlier batch is still waiting for an agent to pick it up"
+                  : "Send these comments to an agent watching this repository"
+              }
+              className="flex items-center justify-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md border border-blue-600 text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-slate-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            >
+              <Send size={12} /> Send
             </button>
           </div>
         )}

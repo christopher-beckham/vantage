@@ -783,3 +783,75 @@ describe("ReviewPanel — the delete arm expires", () => {
     expect(useReviewStore.getState().comments).toHaveLength(0);
   });
 });
+
+describe("ReviewPanel — Send to a watching agent", () => {
+  beforeEach(async () => {
+    const { useOutboxStore } = await import("../stores/useOutboxStore");
+    useOutboxStore.setState({
+      path: null,
+      batches: [],
+      sending: false,
+      error: null,
+    });
+    useReviewStore.setState({ comments: [], filePath: null });
+    vi.clearAllMocks();
+  });
+
+  const mockOutbox = async (
+    batches: { name: string; state: string; sent_at: number }[],
+  ) => {
+    const axios = (await import("axios")).default;
+    const mocked = vi.mocked(axios, true);
+    mocked.get.mockResolvedValue({ data: { batches } });
+    mocked.post.mockResolvedValue({
+      data: {
+        batches: [{ name: "n.md", state: "sent", sent_at: 1 }],
+      },
+    });
+    return mocked;
+  };
+
+  it("posts exactly the text Copy would put on the clipboard", async () => {
+    const mocked = await mockOutbox([]);
+    setComments([baseComment({})]);
+    render(<ReviewPanel isOpen={true} onClose={() => {}} />);
+
+    const send = await screen.findByRole("button", { name: /send/i });
+    await act(async () => {
+      fireEvent.click(send);
+    });
+
+    expect(mocked.post).toHaveBeenCalledWith(
+      "/api/review/outbox",
+      { text: useReviewStore.getState().pendingPayload() },
+      { params: { path: "doc.md" } },
+    );
+    expect(await screen.findByText("Sent, not claimed yet")).toBeTruthy();
+  });
+
+  it("is off while an earlier batch still waits to be claimed", async () => {
+    await mockOutbox([{ name: "n.md", state: "sent", sent_at: 1 }]);
+    setComments([baseComment({})]);
+    render(<ReviewPanel isOpen={true} onClose={() => {}} />);
+
+    await screen.findByText("Sent, not claimed yet");
+    expect(
+      (screen.getByRole("button", { name: /send/i }) as HTMLButtonElement)
+        .disabled,
+    ).toBe(true);
+  });
+
+  it("shows that an agent is working once it claims the batch", async () => {
+    await mockOutbox([{ name: "n.md", state: "claimed", sent_at: 1 }]);
+    setComments([baseComment({})]);
+    render(<ReviewPanel isOpen={true} onClose={() => {}} />);
+
+    expect(
+      await screen.findByText("Agent is working on this document"),
+    ).toBeTruthy();
+    expect(
+      (screen.getByRole("button", { name: /send/i }) as HTMLButtonElement)
+        .disabled,
+    ).toBe(false);
+  });
+});

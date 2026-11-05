@@ -633,6 +633,12 @@ interface ReviewState {
   /** Reopen a resolved comment and add a follow-up reply. */
   reopenAndReply: (id: string, replyText: string) => Promise<void>;
   setLastContent: (content: string) => void;
+  /**
+   * The text Copy puts on the clipboard for every comment waiting on the
+   * agent, or null when none is. Send posts the same text to the outbox, so
+   * a pasted round and a watched one read identically to the agent.
+   */
+  pendingPayload: () => string | null;
   copyAllToClipboard: () => Promise<boolean>;
   /** Copy a single comment's thread to the clipboard for the agent. */
   copyCommentToClipboard: (id: string) => Promise<boolean>;
@@ -1065,10 +1071,10 @@ export const useReviewStore = create<ReviewState>((set, get) => ({
     set({ lastContent: content });
   },
 
-  copyAllToClipboard: async () => {
+  pendingPayload: () => {
     const { filePath, lastContent, comments } = get();
     const active = typedComments(filePath, comments).filter(isPendingForAgent);
-    if (!filePath || active.length === 0) return false;
+    if (!filePath || active.length === 0) return null;
 
     const output = reviewCommentsBlock(filePath, active, lastContent);
     output.push(
@@ -1077,8 +1083,13 @@ export const useReviewStore = create<ReviewState>((set, get) => ({
         active,
       ),
     );
+    return output.join("\n");
+  },
 
-    return copyTextOrWarn(output.join("\n"));
+  copyAllToClipboard: async () => {
+    const text = get().pendingPayload();
+    if (text === null) return false;
+    return copyTextOrWarn(text);
   },
 
   copyCommentToClipboard: async (id: string) => {
