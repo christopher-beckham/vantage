@@ -132,10 +132,20 @@ the review store already flatten paths. A document can have several batches
 waiting ([D1](#decision-ledger)), and the agent answers them in name order.
 
 **What a batch contains.** The unanswered comments, as the Copy payload carries
-them now. The text is assembled in Go ([OQ-RO2](#decision-ledger)), because a
-rewrite after an edit ([§6](#6-vantages-side)) happens inside the server's
-comment command with no browser involved; Copy fetches its text from the same
-code, so there is one implementation. A pointer to `watching.md` for the delivery format, in place of
+them now. The browser assembles the text, with the code Copy already uses, and
+posts it on Send ([OQ-RO2](#decision-ledger)). There is one implementation,
+and the Go side only handles files. Three facts decided it:
+
+- **Copy has to stay inside the click.** Over plain HTTP on a non-localhost
+  address, the clipboard fallback only works during the user's gesture
+  ([`clipboard.ts`](../../frontend/src/lib/clipboard.ts)), so Copy cannot wait
+  for the server to send it text.
+- **Part of the text belongs to `vantage-md`.** The payload includes its
+  `ANSWER_PROCESSING_GUIDE`, which `vantage-check style-guide` also prints. Go
+  would need a second copy of it.
+- **An edit always comes from a browser.** A reviewer only edits or deletes a
+  comment in a Vantage tab, which holds the review and the document, so it can
+  post the rewritten text with the edit. A pointer to `watching.md` for the delivery format, in place of
 the protocol text the paste repeats today. And last, so it is the last thing
 the agent reads, the instruction to start watching again:
 
@@ -191,7 +201,8 @@ does not stop at a prompt while the user is away ([§7](#7-edge-cases-and-how-ea
 
 - **Send** writes the current document's unanswered comments as a new batch. It
   writes nothing when there are none.
-- **Editing or deleting a sent comment** first claims the unclaimed batch by
+- **Editing or deleting a sent comment** sends the batch's new text from the
+  browser with the edit. The server first claims the unclaimed batch by
   renaming `x.md` to `x.md.updating`, then rewrites it, or removes it if no
   comments are left. If the rename fails, the agent already has the batch, so
   an edit goes out as a new batch holding only that comment, and a deletion
@@ -259,13 +270,12 @@ does not stop at a prompt while the user is away ([§7](#7-edge-cases-and-how-ea
 
 1. Vantage writes `watching.md` and `.vantage/.gitignore`, and the watcher sees
    the outbox.
-2. Move the payload's assembly from the browser into Go, with Copy fetching
-   its text from the server.
-3. Send writes a batch; the outbox states show in the review panel.
-4. The `vantage-watch` skill in `userguide/`, with its permission list.
-5. Rewrite-by-claim for edited and deleted comments.
-6. Failure reports, Re-send and Dismiss.
-7. The stalled-claim timeout ([§6](#6-vantages-side)).
+2. Send posts the browser's text and Vantage writes a batch; the outbox states
+   show in the review panel.
+3. The `vantage-watch` skill in `userguide/`, with its permission list.
+4. Rewrite-by-claim for edited and deleted comments.
+5. Failure reports, Re-send and Dismiss.
+6. The stalled-claim timeout ([§6](#6-vantages-side)).
 
 ## Decision Ledger
 
@@ -281,4 +291,4 @@ does not stop at a prompt while the user is away ([§7](#7-edge-cases-and-how-ea
 | D8 | Vantage writes `.vantage/.gitignore` containing `*` | 2026-11-04 | [§6](#6-vantages-side) |
 | D9 | The agent claims before reading and reports a failure as `.failed` with a reason file | 2026-11-04 | [§5](#5-starting-and-keeping-the-watch), [§7](#7-edge-cases-and-how-each-is-handled) |
 | OQ-RO1 | A claim is stalled after 15 minutes without progress, where progress is the claim or any inbox delivery for the document; the elapsed time is always shown; not configurable | 2026-11-04 | [§6](#6-vantages-side) |
-| OQ-RO2 | A batch's text is assembled in Go, and Copy fetches its text from the same code | 2026-11-04 | [§4](#4-a-batchs-lifecycle) |
+| OQ-RO2 | A batch's text is assembled in the browser by the code Copy uses, and posted on Send and on every edit of a sent comment; the server only handles files. Amended the same day: an earlier ruling for Go missed the clipboard and `vantage-md` constraints | 2026-11-04 | [§4](#4-a-batchs-lifecycle) |
