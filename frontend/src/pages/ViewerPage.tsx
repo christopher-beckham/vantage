@@ -395,7 +395,7 @@ export const ViewerPage: React.FC = () => {
         ? "failed"
         : "idle";
   const handleReviewSend = useCallback(async () => {
-    const text = reviewPendingPayload();
+    const text = reviewPendingPayload("outbox");
     if (reviewFilePath === null || text === null) return;
     await sendToOutbox(reviewFilePath, text);
   }, [reviewPendingPayload, reviewFilePath, sendToOutbox]);

@@ -811,7 +811,7 @@ describe("ReviewPanel — Send to a watching agent", () => {
     return mocked;
   };
 
-  it("posts exactly the text Copy would put on the clipboard", async () => {
+  it("posts Copy's text with Send's own delivery steps", async () => {
     const mocked = await mockOutbox([]);
     setComments([baseComment({})]);
     render(<ReviewPanel isOpen={true} onClose={() => {}} />);
@@ -823,7 +823,7 @@ describe("ReviewPanel — Send to a watching agent", () => {
 
     expect(mocked.post).toHaveBeenCalledWith(
       "/api/review/outbox",
-      { text: useReviewStore.getState().pendingPayload() },
+      { text: useReviewStore.getState().pendingPayload("outbox") },
       { params: { path: "doc.md" } },
     );
     expect(await screen.findByText("Sent, not claimed yet")).toBeTruthy();

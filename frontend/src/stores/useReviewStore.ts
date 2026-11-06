@@ -635,10 +635,12 @@ interface ReviewState {
   setLastContent: (content: string) => void;
   /**
    * The text Copy puts on the clipboard for every comment waiting on the
-   * agent, or null when none is. Send posts the same text to the outbox, so
-   * a pasted round and a watched one read identically to the agent.
+   * agent, or null when none is. Send posts it to the outbox with `"outbox"`,
+   * which differs only in how it says to deliver: a watched round runs with
+   * nobody at the terminal, so it gets two plain commands a permission rule can
+   * allow, not the one-line shell command a paste carries.
    */
-  pendingPayload: () => string | null;
+  pendingPayload: (delivery?: Delivery) => string | null;
   copyAllToClipboard: () => Promise<boolean>;
   /** Copy a single comment's thread to the clipboard for the agent. */
   copyCommentToClipboard: (id: string) => Promise<boolean>;
@@ -1071,7 +1073,7 @@ export const useReviewStore = create<ReviewState>((set, get) => ({
     set({ lastContent: content });
   },
 
-  pendingPayload: () => {
+  pendingPayload: (delivery = "paste") => {
     const { filePath, lastContent, comments } = get();
     const active = typedComments(filePath, comments).filter(isPendingForAgent);
     if (!filePath || active.length === 0) return null;
@@ -1081,6 +1083,7 @@ export const useReviewStore = create<ReviewState>((set, get) => ({
       ...respondingInstructions(
         [{ path: filePath, example: active[0] }],
         active,
+        delivery,
       ),
     );
     return output.join("\n");
@@ -1433,9 +1436,19 @@ export function checkCommand(
   return `${viewer}uvx vantage-check ${paths.map(shellWord).join(" ")}`;
 }
 
+/**
+ * How a payload tells the agent to deliver. `"paste"` is Copy's one-line shell
+ * command, for an agent someone is sitting with. `"outbox"` is Send's: two
+ * plain steps, because a watched round has nobody to approve a prompt and a
+ * permission rule cannot match a command chained with `&&` (the agent evals
+ * found every round stopping there, docs/design/review-outbox.md §7 case 9).
+ */
+export type Delivery = "paste" | "outbox";
+
 function respondingInstructions(
   targets: readonly DeliveryTarget[],
   batch: readonly ReviewComment[] = [],
+  delivery: Delivery = "paste",
 ): string[] {
   const single = targets.length === 1;
   const paths = targets.map((t) => t.path);
@@ -1498,26 +1511,7 @@ function respondingInstructions(
     return `{"path":${JSON.stringify(path)},"id":"${exampleId}","round":${exampleRound},"summary":"Reworded the paragraph for clarity","nonce":"${exampleNonce(i)}"}`;
   });
   const fieldsPath = single ? paths[0] : "<the document's path>";
-  return [
-    "## Responding to Comments",
-    "",
-    ...followUpNote,
-    ANSWER_PROCESSING_GUIDE,
-    "",
-    // The pointer to the checker rides here rather than in anyone's AGENTS.md:
-    // this block is copied into the agent's context on every single review
-    // turn, so it reaches whatever environment the agent has, needs no setup
-    // from the user, and arrives at the one moment it is useful — just before
-    // the work goes back (P3 of docs/reference/agent-cli.md).
-    //
-    // Exit 2 is named because the checker did run there: a configuration error,
-    // or a refusal from a checker older than the repository's `target`
-    // (docs/design/checker-version-skew.md §5). An agent told only "fix what it
-    // reports" would otherwise "fix" a refusal by editing `.vantage.toml`, and
-    // this sentence is frozen into every viewer that ships it, so it is here
-    // before any release relies on a refusal.
-    `**Before delivering, check the ${single ? "document" : "documents"}.** From the root of this repository run \`${checkCommand(paths)}\` — no install, no server — and fix what it reports. A broken link or a diagram that does not parse is cheaper to find here than in the next review round. If the command cannot run, or exits 2 (a configuration error or a refusal), deliver anyway and leave \`.vantage.toml\` as it is — this is a quality gate, not a delivery dependency.`,
-    "",
+  const pasteSteps = [
     single
       ? "After addressing your comments: **save the document first**, then deliver your responses with a single command from the root of this document's repository:"
       : "After addressing your comments: **save the documents first**, then deliver your responses with a single command from the root of these documents' repository:",
@@ -1540,21 +1534,70 @@ function respondingInstructions(
     // delivery failure that never happened.
     "> **The file is meant to vanish.** Vantage consumes the delivery and deletes it, usually within a second of the rename — that disappearance *is* the receipt, which is what the wait loop above reports as `delivered:`. A later `cat` or `ls` of that path saying `No such file or directory` is therefore success, not a lost delivery: do not re-send it.",
     "",
+  ];
+  // The same handoff as the paste's command, as two plain steps, so a watched
+  // round never stops at a permission prompt. <token> is the agent's to pick:
+  // there is no $RANDOM without a shell.
+  const outboxSteps = [
+    single
+      ? "After addressing your comments: **save the document first**, then deliver your responses in two steps, each a plain command on its own:"
+      : "After addressing your comments: **save the documents first**, then deliver your responses in two steps, each a plain command on its own:",
+    "",
+    `1. With your file-writing tool, write the delivery to \`${inboxDir}/${fileStem}.<token>.jsonl.writing\`, where \`<token>\` is a few random letters or digits that are new for this delivery:`,
+    "",
+    "   ```",
+    ...exampleLines.map((l) => `   ${l}`),
+    "   ```",
+    "",
+    `2. Rename it onto its \`.jsonl\` name: \`mv ${inboxDir}/${fileStem}.<token>.jsonl.writing ${inboxDir}/${fileStem}.<token>.jsonl\``,
+    "",
+    "Vantage reads nothing but `.jsonl` names, so it never sees the delivery until the rename puts the whole of it in place. **Do not write to the `.jsonl` name directly**: Vantage can consume the file before your write lands and drop your response.",
+    "",
+    "> **The file is meant to vanish.** Vantage consumes the delivery and deletes it, usually within a second of the rename, and that disappearance *is* the receipt. A later `ls` of that path saying `No such file or directory` is success, not a lost delivery: do not re-send it.",
+    "",
+  ];
+  return [
+    "## Responding to Comments",
+    "",
+    ...followUpNote,
+    ANSWER_PROCESSING_GUIDE,
+    "",
+    // The pointer to the checker rides here rather than in anyone's AGENTS.md:
+    // this block is copied into the agent's context on every single review
+    // turn, so it reaches whatever environment the agent has, needs no setup
+    // from the user, and arrives at the one moment it is useful — just before
+    // the work goes back (P3 of docs/reference/agent-cli.md).
+    //
+    // Exit 2 is named because the checker did run there: a configuration error,
+    // or a refusal from a checker older than the repository's `target`
+    // (docs/design/checker-version-skew.md §5). An agent told only "fix what it
+    // reports" would otherwise "fix" a refusal by editing `.vantage.toml`, and
+    // this sentence is frozen into every viewer that ships it, so it is here
+    // before any release relies on a refusal.
+    `**Before delivering, check the ${single ? "document" : "documents"}.** From the root of this repository run \`${checkCommand(paths)}\` — no install, no server — and fix what it reports. A broken link or a diagram that does not parse is cheaper to find here than in the next review round. If the command cannot run, or exits 2 (a configuration error or a refusal), deliver anyway and leave \`.vantage.toml\` as it is — this is a quality gate, not a delivery dependency.`,
+    "",
+    ...(delivery === "outbox" ? outboxSteps : pasteSteps),
     "One JSON object per line, one line per comment you acted on. The fields:",
     "",
     "```",
     `{"path":${JSON.stringify(fieldsPath)},"id":"<short-id>","round":<round>,"summary":"<one sentence: what you changed>","nonce":"<fresh random string>"}`,
     "```",
     "",
-    "The command writes to a `.writing` scratch name, then `mv`s it onto the `.jsonl` name. That rename is the completion signal: Vantage ignores every non-`.jsonl` name, so it never reads the file until the whole delivery is in place. **Do not write directly to the `.jsonl` name** (`cat > x.jsonl`) — that creates the file empty before the write lands, and Vantage can consume the empty file and drop your response. (If your shell has no `$RANDOM`, substitute any unique token for the suffix. Never append line-by-line.)",
-    "",
+    ...(delivery === "outbox"
+      ? []
+      : [
+          "The command writes to a `.writing` scratch name, then `mv`s it onto the `.jsonl` name. That rename is the completion signal: Vantage ignores every non-`.jsonl` name, so it never reads the file until the whole delivery is in place. **Do not write directly to the `.jsonl` name** (`cat > x.jsonl`) — that creates the file empty before the write lands, and Vantage can consume the empty file and drop your response. (If your shell has no `$RANDOM`, substitute any unique token for the suffix. Never append line-by-line.)",
+          "",
+        ]),
     "### Delivery rules",
     "",
     "- **Save the document before delivering.** Vantage reads the document from disk at delivery time to record what changed; delivering first records a stale version.",
     "- **One line per comment you acted on.** Skip the rest — a line claiming work you did not do reads to the reviewer as an answered comment.",
     "- **Copy `id` and `round` from the heading of the comment you are answering** (they are shown there as `` `[id]` `` and `` `round:N` ``). The round says which turn you answered, so a follow-up the reviewer writes while you work is not mistaken for something your answer already covered.",
     "- **Generate a fresh random nonce for every line**, and **do not re-deliver a line you have already delivered**. The nonce is how Vantage tells a new response from a redelivered one; a line with a reused nonce is silently dropped.",
-    "- **A fresh `.jsonl` file per delivery.** The `$RANDOM` suffix ensures this; each file is consumed and deleted whole, so a new delivery never overwrites one still waiting.",
+    delivery === "outbox"
+      ? "- **A fresh `.jsonl` file per delivery.** A new `<token>` each time ensures this; each file is consumed and deleted whole, so a new delivery never overwrites one still waiting."
+      : "- **A fresh `.jsonl` file per delivery.** The `$RANDOM` suffix ensures this; each file is consumed and deleted whole, so a new delivery never overwrites one still waiting.",
     "",
     "### How your summary is displayed",
     "",

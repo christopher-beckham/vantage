@@ -1097,6 +1097,53 @@ describe("useReviewStore", () => {
     });
   });
 
+  describe("pendingPayload for the outbox", () => {
+    const seed = () =>
+      useReviewStore.setState({
+        filePath: "guides/release.md",
+        lastContent: "line one\nline two\n",
+        comments: [mkThreadComment("bbbbbbbb-0002", "typo in this line", [])],
+      });
+
+    it("carries the same comments as Copy's text", () => {
+      seed();
+      const send = useReviewStore.getState().pendingPayload("outbox")!;
+      const paste = useReviewStore.getState().pendingPayload()!;
+      const comments = (t: string) =>
+        t.slice(0, t.indexOf("## Responding to Comments"));
+      expect(comments(send)).toBe(comments(paste));
+    });
+
+    // A watched round has nobody to approve a prompt, and a permission rule
+    // cannot match a chained command, so every step must be a plain one.
+    it("delivers in plain steps: a file write, then one mv", () => {
+      seed();
+      const send = useReviewStore.getState().pendingPayload("outbox")!;
+      const delivery = send.slice(
+        send.indexOf("After addressing your comments"),
+      );
+      expect(delivery).not.toContain("&&");
+      expect(delivery).not.toContain("$RANDOM");
+      expect(delivery).not.toContain("<<'EOF'");
+      expect(delivery).toContain(
+        "With your file-writing tool, write the delivery to `.vantage/inbox/guides__release.md.<token>.jsonl.writing`",
+      );
+      expect(delivery).toContain(
+        "`mv .vantage/inbox/guides__release.md.<token>.jsonl.writing .vantage/inbox/guides__release.md.<token>.jsonl`",
+      );
+      expect(delivery).toContain('"id":"bbbbbbbb"');
+    });
+
+    it("leaves Copy's one-line command as it is", () => {
+      seed();
+      const paste = useReviewStore.getState().pendingPayload()!;
+      expect(paste).toContain(
+        "mkdir -p .vantage/inbox && f=.vantage/inbox/guides__release.md.$RANDOM.jsonl",
+      );
+      expect(paste).not.toContain("<token>");
+    });
+  });
+
   describe("copyAllToClipboard", () => {
     const writeText = vi.fn().mockResolvedValue(undefined);
 

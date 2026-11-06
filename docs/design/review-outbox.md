@@ -145,7 +145,11 @@ waiting ([D1](#decision-ledger)), and the agent answers them in name order.
 **What a batch contains.** The unanswered comments, as the Copy payload carries
 them now. The browser assembles the text, with the code Copy already uses, and
 posts it on Send ([OQ-RO2](#decision-ledger)). There is one implementation,
-and the Go side only handles files. Three facts decided it:
+and the Go side only handles files. The one difference is how it says to
+deliver: Copy's text gives a one-line shell command, and Send's gives two plain
+steps, a file write and an `mv`, because nobody is at the terminal to approve a
+chained command ([§7](#7-edge-cases-and-how-each-is-handled), case 9). Three
+facts decided where the text is built:
 
 - **Copy has to stay inside the click.** Over plain HTTP on a non-localhost
   address, the clipboard fallback only works during the user's gesture

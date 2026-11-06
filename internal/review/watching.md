@@ -71,10 +71,9 @@ why.
 Nobody is at the terminal to approve a prompt during a round, and a permission
 rule only matches a plain command. So run each command on its own, from the
 checkout's root, where you already are: no `cd`, no `&&`, `;` or `|`, no
-variables, and nothing appended such as `; echo $?`. To deliver your replies,
-write the delivery under its scratch name with your file-writing tool, then
-rename it with a plain `mv`, instead of the one-line delivery command the batch
-shows. A round that stops at a prompt stays stuck until the user comes back.
+variables, and nothing appended such as `; echo $?`. The batch gives its
+delivery as two such steps: a write with your file-writing tool, then a plain
+`mv`. A round that stops at a prompt stays stuck until the user comes back.
 
 ## Permissions
 

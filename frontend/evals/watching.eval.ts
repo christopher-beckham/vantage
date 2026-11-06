@@ -216,7 +216,7 @@ class Scenario {
       lastContent: readFileSync(join(this.repo, doc.path), "utf8"),
       comments: review?.comments ?? [],
     });
-    const text = useReviewStore.getState().pendingPayload();
+    const text = useReviewStore.getState().pendingPayload("outbox");
     expect(text, "Send has something to send").not.toBeNull();
     await this.api("POST", `/review/outbox?path=${enc(doc.path)}`, { text });
   }

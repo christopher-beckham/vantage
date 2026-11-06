@@ -265,7 +265,7 @@ export const ReviewPanel: React.FC<ReviewPanelProps> = ({
   const status = outboxStatus(batches);
   const sendBlocked = hasUnclaimedBatch(batches);
   const handleSend = async () => {
-    const text = pendingPayload();
+    const text = pendingPayload("outbox");
     if (filePath === null || text === null) return;
     await sendToOutbox(filePath, text);
   };
