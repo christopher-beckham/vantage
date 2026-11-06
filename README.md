@@ -1,5 +1,45 @@
 # Vantage 🔭
 
+## About this fork
+
+I forked Vantage to get rid of copy and paste in a review round.
+
+In upstream Vantage, a round with a coding agent goes out by clipboard and
+comes back by file. The agent's replies arrive as a file Vantage picks up on
+its own, but getting your comments *to* the agent means clicking Copy and
+pasting a large block of text into its session, every single round. Each paste
+has to teach a fresh agent the whole protocol, so most of that block is the same
+boilerplate every time, and someone has to be at the terminal to do it.
+
+This fork makes the outgoing trip a file too. Click **Send** and Vantage writes
+your comments to `.vantage/outbox/`. An agent you asked once to watch picks the
+batch up within seconds, edits the document, replies through the inbox Vantage
+already has, and goes back to waiting. You never leave Vantage. Copy still works
+for an agent that isn't watching.
+
+**Trying it.** The install commands further down install upstream Vantage,
+which doesn't have this. Build from source on the
+[`feat/review-outbox`](https://github.com/christopher-beckham/vantage/tree/feat/review-outbox)
+branch instead (`just build`, which needs the toolchain from `mise install`),
+serve your repository with that `vantage`, then tell a Claude Code session
+started in that repository:
+
+> Watch this repository for Vantage reviews: read .vantage/watching.md and follow it.
+
+**Status.** Working and tested end to end with real agent sessions, including
+several rounds in one session with no permission prompts, but not finished.
+Editing a comment after sending it doesn't reach the agent yet, and there is no
+Re-send or Dismiss for a batch the agent couldn't answer. What is left is in
+[§9 of the design](docs/design/review-outbox.md#9-what-to-build-in-order).
+
+**Reading.** [The design](docs/design/review-outbox.md) records what was
+decided and why, and [the step-by-step explanation](docs/design/review-outbox-tutorial.md)
+walks through how it works, with a timeline diagram for each part.
+
+Everything below is upstream's README.
+
+---
+
 [![CI](https://github.com/mschulkind-oss/vantage/actions/workflows/ci.yml/badge.svg)](https://github.com/mschulkind-oss/vantage/actions/workflows/ci.yml)
 
 **A beautiful local Markdown viewer with live reload and Git awareness.**
