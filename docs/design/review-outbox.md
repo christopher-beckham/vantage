@@ -10,8 +10,10 @@ next: "Build step 1: watching.md, .vantage/.gitignore, and a watcher that sees t
 
 # The review outbox: sending comments to a watching agent
 
-**Status:** design sketch, 2026-11-04, every question ruled the same day. Nothing is built. The rulings below came
-out of one conversation with the maintainer and are recorded in the
+**Status:** design sketch, 2026-11-04, every question ruled the same day. Build
+steps 1 and 2 of [§9](#9-what-to-build-in-order) are built, on the
+`feat/review-outbox` branch. The rulings below were made by this branch's
+author, not by Vantage's maintainer, and are recorded in the
 [Decision Ledger](#decision-ledger). Claims about existing code were checked
 against `main` at `01837a0`.
 

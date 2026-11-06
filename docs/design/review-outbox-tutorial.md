@@ -503,12 +503,12 @@ only change the label.
 ## 13. Two smaller cases
 
 **The agent watches the wrong checkout.** You may have several worktrees of one
-repository, as we do now. Vantage writes batches into the checkout it serves.
-An agent waiting in a different checkout never wakes:
+repository. Vantage writes batches into the checkout it serves. An agent
+waiting in a different checkout never wakes:
 
 ```text
-Vantage serves    ~/github/vantage-review-outbox   writes x.md here
-Agent waits in    ~/github/vantage                 looks here: nothing, ever
+Vantage serves    ~/code/vantage-feature   writes x.md here
+Agent waits in    ~/code/vantage           looks here: nothing, ever
 ```
 
 From Vantage's side this looks like an agent that is busy, so the bar shows
